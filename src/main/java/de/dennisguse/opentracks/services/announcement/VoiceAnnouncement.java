@@ -34,6 +34,7 @@ import de.dennisguse.opentracks.data.ContentProviderUtils;
 import de.dennisguse.opentracks.data.TrackPointIterator;
 import de.dennisguse.opentracks.data.models.Distance;
 import de.dennisguse.opentracks.data.models.Track;
+import de.dennisguse.opentracks.data.models.TrackPoint;
 import de.dennisguse.opentracks.settings.PreferencesUtils;
 import de.dennisguse.opentracks.settings.UnitSystem;
 import de.dennisguse.opentracks.stats.SensorStatistics;
@@ -56,6 +57,10 @@ public class VoiceAnnouncement {
     private final AudioManager audioManager;
 
     private final ContentProviderUtils contentProviderUtils;
+
+    private IntervalStatistics intervalStatistics;
+    private UnitSystem currentUnitSystem;
+    private TrackPoint startTrackPoint;
 
     private final AudioManager.OnAudioFocusChangeListener audioFocusChangeListener = new AudioManager.OnAudioFocusChangeListener() {
         @Override
@@ -116,6 +121,9 @@ public class VoiceAnnouncement {
         this.context = context;
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         contentProviderUtils = new ContentProviderUtils(context);
+        currentUnitSystem = PreferencesUtils.getUnitSystem();
+        intervalStatistics = new IntervalStatistics(Distance.one(currentUnitSystem));
+        startTrackPoint = null;
     }
 
     public void start() {
@@ -165,13 +173,15 @@ public class VoiceAnnouncement {
             return;
         }
 
-
         UnitSystem unitSystem = PreferencesUtils.getUnitSystem();
         boolean isReportSpeed = PreferencesUtils.isReportSpeed(track.getCategory());
 
-        //TODO Do not load all trackpoints for every announcement
-        TrackPointIterator trackPointIterator = contentProviderUtils.getTrackPointLocationIterator(track.getId(), null);
-        IntervalStatistics intervalStatistics = new IntervalStatistics(Distance.one(unitSystem));
+        if (unitSystem != currentUnitSystem) {
+            currentUnitSystem = unitSystem;
+            intervalStatistics = new IntervalStatistics(Distance.one(currentUnitSystem));
+        }
+
+        TrackPointIterator trackPointIterator = contentProviderUtils.getTrackPointLocationIterator(track.getId(), startTrackPoint != null ? startTrackPoint.getId() : null);
         intervalStatistics.addTrackPoints(trackPointIterator);
         IntervalStatistics.Interval lastInterval = intervalStatistics.getLastInterval();
         SensorStatistics sensorStatistics = null;
@@ -183,6 +193,8 @@ public class VoiceAnnouncement {
 
         // We don't care about the utterance id. It is supplied here to force onUtteranceCompleted to be called.
         tts.speak(announcement, TextToSpeech.QUEUE_FLUSH, null, "not used");
+
+        startTrackPoint = contentProviderUtils.getLastValidTrackPoint(track.getId());
     }
 
     public void stop() {
